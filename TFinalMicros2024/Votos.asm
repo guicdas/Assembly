@@ -1,27 +1,38 @@
 ; multi-segment executable file template.
 data segment
     
-    TOPF db 5 dup ("              ", 0aH),00h ;14 espacos (4 pontos + 10 nome)
-    dataFile db "dados.bin", 00h
-    fp dw ?
+    dataFile dw "dados.bin", 00h
     
-    voter_s         db 11 dup (20h)  
-    menu_s1         db 'Votar',       00h
-    menu_s2         db "Gerir",       00h
-    menu_s3         db "Creditos",    00h
-    menu_s4         db "Sair",        00h
-    askNumber_s     db "Introduza o seu numero de eleitor:", 00h
-    candidate_s1    db "Manuel Maria du Bocage", 00h
-    candidate_s2    db "Paula Rego", 00h
-    candidate_s3    db "Luiz Vaz de Camoes", 00h
-    candidate_s4    db "Natalia Correia", 00h
-    candidate_s5    db "Amadeo de Souza-Cardoso", 00h
-    showVoter_s     db "Eleitor: ", 00h
-    continue_s      db "CONTINUAR", 00h
-   
-    TMP      dw   00
-    author_s db "Guilherme Silva 64937",  00h
- 
+    voter_s         db 31 dup (20h)
+    voterNumber_s   db 7 dup (20h)
+    numLen  EQU $ - voterNumber_s
+    error:
+        db "warning: path not found",              "$"
+        db "warning: access denied",               "$"     ;24
+        db "error: invalid handler/file not open", "$"     ;47
+        db "error: please input a number",         "$"     ;46
+        db "error: empty argument",                "$"     ;113 
+        db "error: couldn't write to file",        "$"     ;135
+    menu:
+        db 'Votar',         "$"
+        db "Gerir",         "$"
+        db "Creditos",      "$"
+        db "Sair",          "$"
+    numInput_s    db  "Introduza o seu numero de eleitor:", "$"
+    nameInput_s   db  "Introduza o seu nome:",              "$"
+    candidates:
+        db "Manuel Maria du Bocage",    "$"
+        db "Paula Rego",                "$"
+        db "Luiz Vaz de Camoes",        "$"
+        db "Natalia Correia",           "$"
+        db "Amadeo de Souza-Cardoso",   "$"
+    other_s:
+       db "Eleitor: ",    "$" 
+       db " - ",          "$"           ;10
+       db "CONTINUAR",    "$"           ;14
+       db "Saving...",    "$"           ;24 
+       
+    author_s db "Guilherme Silva 64937",  "$"
 ends
                        
 stack segment
@@ -34,18 +45,10 @@ start:
     MOV     ds, Ax
     MOV     es, Ax
     
-    CALL    setTextMode
-    
-    LEA     Dx, dataFile
-    CALL fopen
-    JC ErrorOpen
-    MOV fp, AX
-    ;LEA DX, TOPF
-    ;MOV CX, 75
-    ;CALL fread
-    error_open:
-    
+    CALL    fOpen
+    ;CALL    fCreate 
     main_loop:
+        CALL    setTextMode     
         CALL    printFirstMenu      
   
     click_loop:
@@ -66,141 +69,159 @@ start:
         JL      credits
         JMP     exit_program
   
-    	vote: 
+    	vote:
+    	    CALL    clearMenu 
     	    CALL    frontOffice
-    	    CALL    clearScreen
     	    JMP     main_loop
     	
     	manage:  
             CALL    backOffice
             JMP     main_loop
     	    
-    	credits:	    
-    	    CALL    clearScreen
+    	credits:
+    	    CALL    clearMenu
+    	    MOV     Dx, 0B08h 
+            CALL    setCursorPosition   
+            LEA     Dx, author_s
+            CALL    printStr$   
+            
+    	    CALL    getClick
+    	    ;MOV     Dx, 440
+    	    ;CALL    clearLine
             JMP     main_loop
             
         exit_program:
-            CALL    clearScreen
-            ;CALL SAVEPONTUACAO
-            ;CALL fclose
+            CALL    clearMenu
+            ;CALL   SAVE
+            CALL    fclose
            
-    MOV     Ax, 4c00h ; terminate program
+    MOV     Ax, 4c00h
     INT     21h
-;*********************************************
-;   printStr    - prints a string pointed by     
-;*********************************************
-    PrintString proc  
-    
-    MOV     Ah, 0Eh    
-    printLoop:
-       
-        MOV     Al, [Si]
-        ;MOV     Bl, 0100_1111b
-        INT     10h
-
-    INC     Si
-    Loop    printLoop 
+;*****************************************************
+;   printStr$    - prints a string terminated by $    
+;*****************************************************
+    printStr$ proc  
+    MOV     Ah, 09h
+    INT     21h
            
     RET
-    PrintString endp 
+    printStr$ endp 
 ;*********************************************
 ;   printFirstMenu  -                   
 ;********************************************** 
     printFirstMenu proc 
-    MOV     Dx, 0410h 
+    MOV     Dx, 0411h 
     CALL    setCursorPosition
-    MOV     Cx, 05          ;verificar se é preciso printar NULL terminator 
-    LEA     Si, menu_s1
-    CALL    printString
+    LEA     Dx, menu
+    CALL    printStr$
     
-    ADD     Dh, 04
+    MOV     Dx, 0811h
     CALL    setCursorPosition
-    MOV     Cx, 05 
-    LEA     Si, menu_s2
-    CALL    printString
+    LEA     Dx, menu+6
+    CALL    printStr$
     
-    ADD     Dh, 04
-    DEC     Dl
+    MOV     Dx, 0C10h
     CALL    setCursorPosition
-    MOV     Cx, 08  
-    LEA     Si, menu_s3
-    CALL    printString
+    LEA     Dx, menu+12
+    CALL    printStr$
     
-    ADD     Dx, 0402h
+    MOV     Dx, 1012h
     CALL    setCursorPosition
-    MOV     Cx, 04
-    LEA     Si, menu_s4
-    CALL    printString 
+    LEA     Dx, menu+21
+    CALL    printStr$ 
     
     RET
     printFirstMenu endp
 ;*********************************************
+;   clearMenu  -                   
+;********************************************** 
+    clearMenu proc 
+    MOV     Dx, 160
+    CALL    clearLine
+    ADD     Dx, 160
+    CALL    clearLine
+    ADD     Dx, 160
+    CALL    clearLine
+    ADD     Dx, 160
+    CALL    clearLine
+    
+    RET
+    clearMenu endp
+;*********************************************
 ;   frontOffice     -                    
 ;********************************************** 
-    frontOffice proc   
-    CALL    setVideoMode
-    PUSH    Dx
-     
+    frontOffice proc       
     MOV     Dx, 0000h 
     CALL    setCursorPosition
-    MOV     Cx, 34
-    LEA     Si, askNumber_s      ;ver LOOPNZ
-    CALL    PrintString 
-    CALL    getName     ;get number
-    ; Validar o número contra a lista de eleitores
-    ; Verificar que o eleitor ainda não votou 
+    LEA     Dx, numInput_s   
+    CALL    PrintStr$  
+    CALL    getNumber      
+    
+    MOV     Dx, 0600h 
+    CALL    setCursorPosition
+    LEA     Dx, nameInput_s   
+    CALL    PrintStr$  
+    CALL    getName 
+    ; Validar o número contra a lista de eleitores      SCASW
+    ; Verificar que o eleitor ainda não votou           SCASB
     CALL    setVideoMode
     
     MOV     Dx, 0302h 
     CALL    setCursorPosition
-    MOV     Cx, 22
-    LEA     Si, candidate_s1
-    CALL    PrintString  
+    LEA     Dx, candidates
+    CALL    PrintStr$  
     
-    ADD     Dh, 03 
+    MOV     Dx, 0602h 
     CALL    setCursorPosition
-    PUSH    Cx
-    MOV     Cx, 10
-    LEA     Si, candidate_s2
-    CALL    PrintString
+    LEA     Dx, candidates+23
+    CALL    PrintStr$
     
-    ADD     Dh, 03 
+    MOV     Dx, 0902h 
     CALL    setCursorPosition
-    MOV     Cx, 18
-    LEA     Si, candidate_s3
-    CALL    PrintString
+    LEA     Dx, candidates+34
+    CALL    PrintStr$
     
-    ADD     Dh, 03 
+    MOV     Dx, 0C02h 
     CALL    setCursorPosition
-    MOV     Cx, 15
-    LEA     Si, candidate_s4              ;meter algo com o hover do rato
-    CALL    PrintString
+    LEA     Dx, candidates+53              
+    CALL    PrintStr$
     
-    ADD     Dh, 03 
+    MOV     Dx,0F02h 
     CALL    setCursorPosition
-    MOV     Cx, 23
-    LEA     Si, candidate_s5             ;mudar para vetor de pointers
-    CALL    PrintString
-    
-    CALL    drawSquares 
-    
-    ADD     Dh, 05 
+    LEA     Dx, candidates+69             ;mudar para vetor de pointers
+    CALL    PrintStr$
+   
+    LEA     Si, [6630]
+    CALL    printSquare 
+    LEA     Si, [14630]         ;meter em variaveis
+    CALL    printSquare
+    LEA     Si, [22630]
+    CALL    printSquare
+    LEA     Si, [30630]
+    CALL    printSquare
+    LEA     Si, [38630]
+    CALL    printSquare             
+   
+    MOV     Dx, 1402h 
     CALL    setCursorPosition
-    MOV     Cx, 09
-    LEA     Si, showVoter_s
-    CALL    PrintString
-    ;MOV    Cx tamanho
-    ;LEA     Si, voter_s
-    ;CALL    PrintString
+    LEA     Dx, other_s
+    CALL    PrintStr$
+    
+    LEA     Dx, voterNumber_s       
+    CALL    PrintStr$
+    LEA     Dx, other_s+10
+    CALL    PrintStr$     
+    LEA     Dx, voter_s   
+    CALL    PrintStr$
     
     MOV     Dx, 1618h 
     CALL    setCursorPosition
-    MOV     Cx, 09
-    LEA     Si, continue_s   ;meter a vermelho?
-    CALL    PrintString
+    LEA     Dx, other_s+14                  ;meter a vermelho?
+    CALL    PrintStr$
     
     vote_loop:
         CALL    getClick
+        JMP     continue
         CMP     Dx, 20 
         JL      vote_loop 
         CMP     Dx, 130 
@@ -210,89 +231,127 @@ start:
         CMP     Dx, 480 
         JG      vote_loop
         CMP     Dx, 30
-        JL      change_square
+        JL      square_1
+        CMP     Dx, 45
+        JL      vote_loop
+        CMP     Dx, 55
+        JL      square_2
+        CMP     Dx, 70
+        JL      vote_loop
+        CMP     Dx, 80
+        JL      square_3
+        CMP     Dx, 95
+        JL      vote_loop
+        CMP     Dx, 105
+        JL      square_4
+        CMP     Dx, 120
+        JL      vote_loop
+        JMP     square_5
     
-    change_square:
-        CALL    changeToRed        
+    square_1:
+        LEA     Si, [6630]
+        CALL    printSquare
+        JMP     vote_loop
+    square_2:    
+        LEA     Si, [14630]
+        CALL    printSquare
+        JMP     vote_loop
+    square_3:    
+        LEA     Si, [22630]
+        CALL    printSquare
+        JMP     vote_loop
+    square_4:    
+        LEA     Si, [30630]
+        CALL    printSquare
+        JMP     vote_loop
+    square_5:    
+        LEA     Si, [38630]
+        CALL    printSquare
+        JMP     vote_loop        
     
-    ;deve ser registado no ficheiro de logs a uma linha com a data e hora a que o voto foi sumetido, o número e nome do eleitor
-                       
-    POP     Dx                   
+    continue:    
+        CALL    saveVotes
+                  
     RET
     frontOffice endp 
 ;*********************************************
-;   drawSquares    -  Bh usado como counter     ;trocar com TMP e chamar COUNTER?              
+;   printSquare     -    args: si, al                
 ;********************************************** 
-    drawSquares proc    
-    PUSH    Dx 
+    printSquare proc
+    PUSH    ds
     PUSH    Bx
-    PUSH    Ax
     
-    MOV     Ah, 0Ch
-    MOV     Al, 1111b
-    MOV     Cx, 230
-    MOV     Dx, 20
-    MOV     Bh, 5
-    square_right:
-    	    INT     10h
-            INC     Cx 
-            CMP     Cx, 240
-            JNE     square_right
-            INT     10h
-            ADD     Dx, 10
-            
-    square_left:
-    	    INT     10h
-            DEC     Cx
-            CMP     Cx, 230
-            JNE     square_left
-            INT     10h
-            ADD     Dx, 15  
-            DEC     Bh
-            OR      Bh, Bh
-            JNZ     square_right
-    MOV     Bh, 5
-    SUB     Dx, 15      ;melhorar?         
-    MOV     TMP, 120
-    square_up:
-            INT     10h
-            DEC     Dx
-            CMP     Dx, TMP
-            JNE     square_up
-            INT     10h
-            SUB     DX, 15
-            SUB     TMP, 25
-            DEC     Bh
-            OR      Bh, Bh
-            JNZ     square_up
-    MOV     Bh, 5
-    ADD     Cx, 10
-    ADD     Dx, 15              
-    MOV     TMP, 30
-    square_down:
-            INT     10h
-            INC     Dx
-            CMP     Dx, TMP
-            JNE     square_down
-            INT     10h
-            ADD     DX, 15
-            ADD     TMP, 25
-            DEC     Bh
-            OR      Bh, Bh
-            JNZ     square_down
-            
-    POP     Dx
-    POP     Bx
-    POP     Ax 
+    MOV     Ax, 0A000h   
+    MOV     ds, Ax
+    
+    XOR     Dx, Dx           
+    MOV     Ax, Si
+    MOV     Bx, 320
+    DIV     Bx
+    MOV     Cx, Dx          ; Si % 320
+    MOV     Dx, Ax          ; Si / 320        
+    MOV     Ah, 0Dh
+    INT     10h     
+    
+    CMP     Al, 0Fh
+    JE      change_color
+    MOV     Al, 0Fh
+    JMP     no_change  
+    
+    change_color:
+        MOV     Al, 0Ch  
+        
+    no_change:
+    MOV     Cx, 10
+    right_square:
+        MOV     [Si], Al     
+        INC     Si           
+        LOOP    right_square
+                   
+    MOV     Cx, 10
+    left_square:
+        MOV     [Si], Al     
+        ADD     Si, 320          
+        LOOP    left_square
+   
+    MOV     Cx, 10
+    up_square:
+        MOV     [Si], Al    
+        DEC     Si           
+        LOOP    up_square
+          
+    MOV     Cx, 10
+    down_square:
+        MOV     [Si], Al      
+        SUB     Si, 320             
+        LOOP    down_square
+    
+    POP     Bx    
+    POP     ds
     RET
-    drawSquares endp  
+    printSquare endp
 ;*********************************************
-;   changeToRed     -                    
+;   saveVotes     -                    
 ;********************************************** 
-    changeToRed proc     
+    saveVotes proc
+    CLC
+    CALL    setTextMode
+    MOV     Ah, 40h
+    MOV     Cx, numLen
+    LEA     Dx, error
+    INT     21h
+    JC      error_write
+    LEA     Dx, other_s+24
+    CALL    printStr$
+    CALL    getClick 
+    RET
+    
+    error_write: 
+        LEA     Dx, error+113
+        CALL    printStr$  
    
     RET
-    changeToRed endp
+    saveVotes endp
 ;*********************************************
 ;   backOffice     -                    
 ;********************************************** 
@@ -305,24 +364,19 @@ start:
 ;   setCursorPosition     -                    
 ;**********************************************   
     setCursorPosition proc
-    PUSH    Ax
-    
-	MOV     Ah, 2 	
+    MOV     Ah, 2
+    XOR     Bh, Bh  	
 	INT     10h  
 	
-	POP     Ax
 	RET
     setCursorPosition endp     
 ;*********************************************
 ;   setTextMode    -              
 ;**********************************************    
-    setTextMode proc
-    PUSH    Ax 
-    
+    setTextMode proc    
 	MOV     Ax, 0000h
 	INT     10h 
 	
-	POP     Ax
 	RET
     setTextMode endp
 
@@ -330,28 +384,40 @@ start:
 ;   setVideoMode    -              
 ;**********************************************    
     setVideoMode proc
-    PUSH    Ax 
-    
-	MOV     Ax, 0013h
+    MOV     Ax, 0013h
 	INT     10h 
 	
-	POP     Ax
 	RET
     setVideoMode endp
 ;*********************************************
 ;   fOpen    -              
 ;**********************************************    
     fOpen proc
-	MOV     Ah, 3Ch
-	INT     21h 
+    CLC
+	MOV     Ah, 3Dh 
+	MOV     Al, 02
+	LEA     Dx, dataFile
+	INT     21h
+	JC      err_open
+	MOV     Bx, Ax    
+    RET
+    err_open:
+        CMP     Ax, 03
+        JE      no_path
+        LEA     Dx, error
+        CALL    printStr$
+        RET
+        
+    no_path:
+        LEA     Dx, error+24        ;testar
+        CALL    printStr$ 
 	
 	RET
     fOpen endp
 ;*********************************************
 ;   getClick -           
 ;**********************************************    
-    getClick Proc         
-    PUSH    AX
+    getClick Proc 
     PUSH    BX
         
     inic:
@@ -360,110 +426,210 @@ start:
         CMP     BX, 1 
         JNE     inic
         
-    POP     AX
-    POP     BX 
+    POP     BX
     RET
-    getClick endp
+    getClick endp  
+;*********************************************
+;   clearLine - clears a line              
+;**********************************************    
+    clearLine proc
+    PUSH    Cx
+    PUSH    Di
+    PUSH    Ax
+    
+    MOV     Ax, 0B800h       
+    MOV     es, Ax            
+
+    MOV     Di, Dx           
+    SHL     Di, 1
+    MOV     Cx, 40            
+
+    MOV     Ax, 0720h               ;cool bug -> tirar push/pop
+    REP     STOSW            
+	
+	POP     Ax
+	POP     Di
+	POP     Cx
+    RET
+    clearLine endp
 ;*********************************************
 ;   clearScreen - clears the screen           
 ;**********************************************    
     clearScreen proc
     PUSH    Ax
-    ;PUSH    Bx 
-    PUSH    Cx
-    PUSH    Dx
-    	
-    MOV     Ah, 07h
-    MOV     Al, 00h
-    ;MOV     Bx, 0010_1111b      ; low 4 bits set fore color, high 4 bits set background color.
-    MOV     Cx, 0000h
-    MOV     Dx, 184Fh
-    INT     10h 
-    
-    POP    Ax
-    ;POP    Bx 
-    POP    Cx
-    POP    Dx	
+    MOV     Ax, 0B800h        
+    MOV     es, Ax            
+
+    XOR     Di, Di            
+    MOV     Cx, 1000          
+
+    MOV     Ax, 0720h           
+    fill_screen:
+        STOSW 
+        LOOP fill_screen    
+	
+	POP     Ax
     RET
     clearScreen endp
-   ; clearScreen proc
-	;push ax
-	;mov ah,06
-	;mov al,00
-	;mov BH,07 ; attributes to be used on blanked lines
-	;mov cx,0 ; CH,CL = row,column of upper left corner of window to scroll
-	;mov DH,25 ;= row,column of lower right corner of window
-	;mov DL,40
-	;int 10h
-	;pop ax
-	;ret
-;********************************
-    fcreate PROC
-    CLC     
-    MOV CX, 0       ; cria um ficheiro normal
-    MOV AH, 3CH     ; codigo para criar ficheiro
-    INT 21H
-    JC errcreating       ; se nao der -> CARRY = 1 -> faz jump
-    RET
-    errcreating:
-    RET    ;mudar
-    
-    fcreate ENDP
 ;*********************************************
-;   ReadStr     - reads a string                     
+;   fCreate -       
 ;**********************************************
-    ReadStr proc
-    PUSH    Ax        
+    fCreate PROC
+    CLC             
+    MOV     Cx, 00h
+    MOV     Dx, offset dataFile       
+    MOV     Ah, 3Ch     
+    INT     21h
+    JC      err_create
+    MOV     Bx, Ax    
+    RET
+    err_create:
+        MOV     Dx, 0000h
+        CALL    setCursorPosition
+        LEA     Dx, error+47
+        CALL    printStr$  
         
-       ; MOV CONTAGEM, 00h
-    readLoop:                  
+    RET
+    fCreate ENDP
+;*********************************************
+;   fclose - close a file           
+;**********************************************
+    fclose PROC
+    CLC          
+    MOV     AH, 3EH     
+    INT     21H
+    JC      err_closing    
+    RET
+    err_closing:
+        MOV     Dx, 0000h
+        CALL    setCursorPosition
+        LEA     Dx, error+47
+        CALL    printStr$
+    
+    RET 
+    fclose ENDP
+;*****************************************************
+;   getNumber   -                   
+;*****************************************************                   
+    getNumber proc                       ;input:t6 da merda
+    MOV     DX, 0301h
+    LEA     Di, voterNumber_s
+    MOV     Cx, 6                  
+    readNum_loop:
+        INC     Dx
+        CALL    setCursorPosition
+        MOV     Ah, 01h
+        INT     21h
+        CMP     Al, 13
+        JE      num_end              
+        CMP     AL, '0'
+        JL      err_read
+        CMP     AL, '9'
+        JG      err_read
+        MOV     [Di], Al
+        INC     Di                  
+        LOOP    readNum_loop
+        JMP     num_end    
+       
+    err_read:                 ;METER UM ESPACO
+        PUSH    Dx
+        MOV     Dx, 0400h
+        CALL    setCursorPosition
+        LEA     Dx, error+84
+        CALL    printStr$ 
+        CALL    wait_1s
+        MOV     Dx, 160
+        CALL    clearLine
+        POP     Dx
+        DEC     Dx
+        JMP     readNum_loop
+        
+    err_emptyNumber:
+        PUSH    Dx
+        MOV     Dx, 0400h
+        CALL    setCursorPosition
+        LEA     Dx, error+113
+        CALL    printStr$
+        CALL    wait_1s
+        MOV     Dx, 160
+        CALL    clearLine
+        POP     Dx
+        DEC     Dx
+        JMP     readNum_loop
+        
+    num_end:
+    CMP     Cx, 6
+    JE      err_emptyNumber
+    MOV     [Di], 36
+        
+    RET
+    getNumber endp
+;*****************************************************
+;   getName   - prints an int                  
+;*****************************************************                   
+    getName proc                     ;implementar backspace
+    MOV     Dx, 0901h 
+    LEA     Di, voter_s
+    MOV     Cx, 30
+    readName_loop:
+        INC     Dx
+        CALL    setCursorPosition                  
         MOV     Ah, 01h
         INT     21h
         MOV     [Di], Al
         INC     Di
-           ; INC CONTAGEM
-           ; CMP CONTAGEM, 11
-        ;JE      endReadLoop
-        CMP     Al, 0dh
-        JE      endReadLoop
-        JMP     readLoop
-    endReadLoop: 
-        DEC     Di
-        MOV     [Di], 0dh 
-            
-    POP     AX     
-    RET            
-    ReadStr endp                 
-;*****************************************************
-;   getName   - prints an int                  
-;*****************************************************                   
-   getName proc 
-        MOV DH, 14
-        MOV DL, 10 
-        MOV CX, 13
-        ADD DH, 1
-        MOV BH, 0
-        CALL setCursorPosition
+        CMP     Al, 13
+        JE      name_end
+        LOOP    readName_loop
+        JMP     name_end
         
-        LEA di, voter_s
-        CALL readStr
+    err_emptyName:                     ;codigo repetido
+        PUSH    Dx
+        MOV     Dx, 0D00h
+        CALL    setCursorPosition
+        LEA     Dx, error+113
+        CALL    printStr$
+        CALL    wait_1s
+        MOV     Dx, 520
+        CALL    clearLine
+        POP     Dx
+        DEC     Dx
+        CALL    readName_loop
+        
+    name_end:
+    CMP     Cx, 30
+    JE      err_emptyName
+    MOV     [Di], 36 
         
     RET
     getName endp
 ;*****************************************************
-;   getNumber   - prints an int                  
+;   getSystemTime   -    push bx               
 ;***************************************************** 
-    getNumber proc
-    MOV AH, 2Ch
-    INT 21h
-    MOV AX, DX
-    MOV AH, 00
-    MOV BL, 7
-    DIV BL 
+getSystemTime proc
+MOV    AH, 2Ch
+INT    21h
+MOV    AX, DX
+MOV    AH, 00
+MOV    BL, 7
+DIV    BL 
 
+RET
+getSystemTime endp 
+;*****************************************************
+;   wait_1s   -            
+;*****************************************************
+wait_1s PROC      
+    PUSH    Dx
+
+    MOV     Cx, 0Fh
+    MOV     Dx, 4240h
+    MOV     Ah, 86h
+    INT     15h
+
+    POP DX        
     RET
-    getNumber endp
-
+wait_1s ENDP
                   
 ends
 end start ; set entry point and stop the assembler.
