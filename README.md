@@ -1,4 +1,4 @@
-# Trabalho Final Micros ASM 2024-2025
+# Final project Microprocessadores 2024-2025
 This project was developped in collaboration with Sidimohamed Brahim and Tiago Leal, as part of the Microprocessors course at FCT Nova.
 ## Project
 To see the subject:
